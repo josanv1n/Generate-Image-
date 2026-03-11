@@ -15,23 +15,19 @@ export const gasService = {
     }
 
     try {
-      // We use a "simple request" (no Content-Type header) to avoid CORS preflight issues with GAS
+      // A true "simple request" has NO custom headers and uses text/plain
+      // This is the most reliable way to talk to GAS from a browser
       const response = await fetch(url, {
         method: 'POST',
-        mode: 'cors',
-        redirect: 'follow',
+        // No headers here to keep it "simple"
         body: JSON.stringify({ action, ...data }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       const result = await response.json();
       return result;
-    } catch (e) {
-      console.error('GAS Request failed. URL used:', url, 'Error:', e);
-      throw new Error('Connection failed. Ensure GAS is deployed as "Anyone" and URL ends with /exec');
+    } catch (e: any) {
+      console.error('GAS Request failed:', e);
+      throw new Error(`Koneksi Gagal: ${e.message || 'Cek koneksi internet atau deployment GAS'}`);
     }
   },
 

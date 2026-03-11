@@ -75,12 +75,13 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
   const generate = async () => {
     if (!prompt) return;
     setIsGenerating(true);
+    setGeneratedImage(null); // Clear previous image
     try {
       const result = await geminiService.generateImage(prompt, images);
       setGeneratedImage(result);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Generation failed");
+      alert(err.message || "Gagal menghasilkan gambar. Silakan coba lagi.");
     } finally {
       setIsGenerating(false);
     }
@@ -198,29 +199,62 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
           </div>
         </section>
 
-        {/* Result */}
-        <AnimatePresence>
-          {generatedImage && (
-            <motion.section
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              <div className="techno-card aspect-square overflow-hidden">
-                <img src={generatedImage} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                <div className="absolute top-0 left-0 w-full h-full pointer-events-none border-[20px] border-transparent border-t-white/5 border-l-white/5"></div>
-              </div>
-              <button
-                onClick={save}
-                disabled={isSaving}
-                className="w-full py-3 techno-card flex items-center justify-center gap-2 font-display text-sm tracking-widest hover:bg-[#00ff9d]/10 transition-colors"
+        {/* Result & Loading */}
+        <section className="min-h-[300px] flex flex-col justify-center">
+          <AnimatePresence mode="wait">
+            {isGenerating ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="techno-card aspect-square flex flex-col items-center justify-center space-y-4 overflow-hidden relative"
               >
-                {isSaving ? <Loader2 className="animate-spin" size={18} /> : <ImageIcon size={18} />}
-                SAVE TO ARCHIVE
-              </button>
-            </motion.section>
-          )}
-        </AnimatePresence>
+                <div className="absolute inset-0 bg-gradient-to-b from-[#00ff9d]/5 to-transparent animate-pulse"></div>
+                <div className="relative">
+                  <Loader2 className="animate-spin text-[#00ff9d]" size={48} />
+                  <div className="absolute inset-0 blur-lg bg-[#00ff9d]/30 animate-pulse"></div>
+                </div>
+                <div className="text-center space-y-1 relative z-10">
+                  <p className="font-display text-[#00ff9d] text-sm animate-pulse">NEURAL PROCESSING</p>
+                  <p className="font-mono text-[10px] text-white/40 uppercase tracking-[0.2em]">Synthesizing Pixels...</p>
+                </div>
+                {/* Scanline effect */}
+                <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]"></div>
+              </motion.div>
+            ) : generatedImage ? (
+              <motion.div
+                key="result"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="space-y-4"
+              >
+                <div className="techno-card aspect-square overflow-hidden relative">
+                  <img src={generatedImage} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <div className="absolute top-0 left-0 w-full h-full pointer-events-none border-[20px] border-transparent border-t-white/5 border-l-white/5"></div>
+                </div>
+                <button
+                  onClick={save}
+                  disabled={isSaving}
+                  className="w-full py-3 techno-card flex items-center justify-center gap-2 font-display text-sm tracking-widest hover:bg-[#00ff9d]/10 transition-colors"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <ImageIcon size={18} />}
+                  SAVE TO ARCHIVE
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="placeholder"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                className="techno-card aspect-square flex flex-col items-center justify-center border-dashed border-white/10"
+              >
+                <ImageIcon size={48} className="text-white/10 mb-2" />
+                <p className="font-mono text-[10px] text-white/20 uppercase">Waiting for Input</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
       </main>
 
       {/* Camera Overlay */}

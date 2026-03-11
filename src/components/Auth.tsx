@@ -26,11 +26,11 @@ export default function Auth({ onLogin }: AuthProps) {
       if (res.success && res.userId) {
         onLogin(res.userId, res.userName || nama);
       } else {
-        alert(res.error || "Authentication failed");
+        alert(res.error || "Login Gagal: Nama atau Password salah");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Connection error. Check VITE_GAS_URL.");
+      alert(err.message || "Terjadi kesalahan koneksi ke server.");
     } finally {
       setIsLoading(false);
     }

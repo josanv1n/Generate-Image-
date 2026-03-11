@@ -16,11 +16,15 @@ const SPREADSHEET_ID = '1L6VQeRGqEybVIe5NjPR8nvV-XnqQO6QoarFQeq8B0uQ';
 const DRIVE_FOLDER_ID = '1bAY4Ruum9yIbl0FMUzycmkQJhXzTqtzT';
 
 function doPost(e) {
-  const params = JSON.parse(e.postData.contents);
-  const action = params.action;
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return createResponse({ success: false, error: 'No data received' });
+    }
+    
+    const params = JSON.parse(e.postData.contents);
+    const action = params.action;
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
     switch (action) {
       case 'register':
         return registerUser(ss, params.data);
@@ -33,10 +37,11 @@ function doPost(e) {
       case 'deleteImage':
         return deleteImage(ss, params.id, params.userId);
       default:
-        return createResponse({ success: false, error: 'Invalid action' });
+        return createResponse({ success: false, error: 'Invalid action: ' + action });
     }
   } catch (err) {
-    return createResponse({ success: false, error: err.toString() });
+    console.error('Error in doPost:', err);
+    return createResponse({ success: false, error: 'Server Error: ' + err.message });
   }
 }
 
@@ -49,15 +54,15 @@ function registerUser(ss, data) {
   const sheet = ss.getSheetByName('Users');
   const users = sheet.getDataRange().getValues();
   
-  // Check if user exists
+  // Check if user exists (force string comparison)
   for (let i = 1; i < users.length; i++) {
-    if (users[i][1] === data.nama) {
-      return createResponse({ success: false, error: 'User already exists' });
+    if (String(users[i][1]).toLowerCase() === String(data.nama).toLowerCase()) {
+      return createResponse({ success: false, error: 'User sudah terdaftar' });
     }
   }
   
   const id = Utilities.getUuid();
-  sheet.appendRow([id, data.nama, data.password]);
+  sheet.appendRow([id, data.nama, String(data.password)]);
   return createResponse({ success: true, userId: id });
 }
 
@@ -66,11 +71,17 @@ function loginUser(ss, data) {
   const users = sheet.getDataRange().getValues();
   
   for (let i = 1; i < users.length; i++) {
-    if (users[i][1] === data.nama && users[i][2] === data.password) {
+    // Force string comparison to handle numeric passwords like 8000
+    const sheetNama = String(users[i][1]).trim();
+    const sheetPass = String(users[i][2]).trim();
+    const inputNama = String(data.nama).trim();
+    const inputPass = String(data.password).trim();
+    
+    if (sheetNama === inputNama && sheetPass === inputPass) {
       return createResponse({ success: true, userId: users[i][0], userName: users[i][1] });
     }
   }
-  return createResponse({ success: false, error: 'Invalid name or password' });
+  return createResponse({ success: false, error: 'Nama atau Password salah' });
 }
 
 function saveImage(ss, data) {
