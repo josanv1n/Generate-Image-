@@ -1,39 +1,37 @@
 import { GASResponse } from '../types';
 
-const GAS_URL = import.meta.env.VITE_GAS_URL;
+const GAS_URL_RAW = import.meta.env.VITE_GAS_URL;
 
 export const gasService = {
   async request<T>(action: string, data?: any): Promise<GASResponse<T>> {
-    if (!GAS_URL) {
-      throw new Error('VITE_GAS_URL is not configured. Please add it to your environment variables.');
+    if (!GAS_URL_RAW) {
+      throw new Error('VITE_GAS_URL is not configured.');
     }
 
-    const response = await fetch(GAS_URL, {
-      method: 'POST',
-      mode: 'no-cors', // Apps Script requires no-cors for simple POST or it fails preflight
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action, data }),
-    });
+    // Auto-fix URL if /exec is missing
+    let url = GAS_URL_RAW.trim();
+    if (url.includes('script.google.com') && !url.endsWith('/exec')) {
+      url = url.endsWith('/') ? url + 'exec' : url + '/exec';
+    }
 
-    // Note: no-cors means we can't read the response body directly in the browser.
-    // However, for Apps Script, we often use a JSONP-like approach or just handle the UI optimistically.
-    // BUT, since we need data back (userId, history), we actually NEED a proper CORS setup.
-    // To fix this, we'll use a standard fetch and expect the user to have deployed GAS correctly.
-    // Actually, GAS Web Apps DO support CORS if handled correctly, but often it's easier to use a proxy or 
-    // just accept that we might need to handle the redirect.
-    
-    // Let's try standard fetch first. If it fails, we'll suggest the user check their deployment.
     try {
-      const res = await fetch(GAS_URL, {
+      // We use a "simple request" (no Content-Type header) to avoid CORS preflight issues with GAS
+      const response = await fetch(url, {
         method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
         body: JSON.stringify({ action, ...data }),
       });
-      return await res.json();
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result;
     } catch (e) {
-      console.error('GAS Request failed:', e);
-      throw e;
+      console.error('GAS Request failed. URL used:', url, 'Error:', e);
+      throw new Error('Connection failed. Ensure GAS is deployed as "Anyone" and URL ends with /exec');
     }
   },
 
