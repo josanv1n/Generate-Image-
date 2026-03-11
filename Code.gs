@@ -1,15 +1,6 @@
 /**
  * Google Apps Script (Code.gs)
- * 
- * Instructions:
- * 1. Open your Google Sheet "Tools DB".
- * 2. Go to Extensions > Apps Script.
- * 3. Replace the content of Code.gs with this code.
- * 4. Set Script Properties: GEMINI_API_KEY (if needed for backend logic, though generation is frontend).
- * 5. Deploy as Web App:
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 6. Copy the Web App URL and set it as VITE_GAS_URL in your environment.
+ * LENGKAP DENGAN PROXY GEMINI & IZIN
  */
 
 const SPREADSHEET_ID = '1L6VQeRGqEybVIe5NjPR8nvV-XnqQO6QoarFQeq8B0uQ';
@@ -48,53 +39,94 @@ function doPost(e) {
 }
 
 function proxyGenerateImage(prompt, referenceImages) {
-  try {
-    const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-    if (!apiKey) {
-      return createResponse({ success: false, error: 'API Key tidak ditemukan di Script Properties' });
-    }
+  const props = PropertiesService.getScriptProperties();
+  // Mengambil dua API Key (Utama & Cadangan)
+  const apiKeys = [
+    props.getProperty('GEMINI_API_KEY'),
+    props.getProperty('GEMINI_API_KEY_2') // Tambahkan ini di Script Properties jika ada
+  ].filter(k => k); // Hanya gunakan yang tidak kosong
 
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=' + apiKey;
-    
-    const parts = referenceImages.map(base64 => {
-      const mimeType = base64.match(/data:(.*?);base64/)?.[1] || "image/png";
-      return {
-        inlineData: {
-          data: base64.split(',')[1],
-          mimeType: mimeType
-        }
-      };
-    });
-    parts.push({ text: prompt });
+  if (apiKeys.length === 0) {
+    return createResponse({ success: false, error: 'API Key tidak ditemukan di Script Properties' });
+  }
 
-    const payload = {
-      contents: [{ parts: parts }]
-    };
+  const models = [
+    'gemini-3.1-flash-image-preview',
+    'gemini-3-pro-image-preview',
+    'gemini-2.5-flash-image'
+  ];
 
-    const options = {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    };
+  let lastError = '';
 
-    const response = UrlFetchApp.fetch(url, options);
-    const result = JSON.parse(response.getContentText());
-
-    if (result.candidates && result.candidates[0] && result.candidates[0].content && result.candidates[0].content.parts) {
-      const imagePart = result.candidates[0].content.parts.find(p => p.inlineData);
-      if (imagePart) {
-        return createResponse({ 
-          success: true, 
-          imageData: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data 
+  // Loop melalui setiap API Key
+  for (const apiKey of apiKeys) {
+    // Loop melalui setiap Model
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        
+        const parts = referenceImages.map(base64 => {
+          const mimeType = base64.match(/data:(.*?);base64/)?.[1] || "image/png";
+          return {
+            inlineData: {
+              data: base64.split(',')[1],
+              mimeType: mimeType
+            }
+          };
         });
+        parts.push({ text: prompt });
+
+        const payload = {
+          contents: [{ parts: parts }],
+          generationConfig: {
+            imageConfig: {
+              aspectRatio: "1:1",
+              imageSize: "1K"
+            }
+          }
+        };
+
+        const options = {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        };
+
+        const response = UrlFetchApp.fetch(url, options);
+        const responseText = response.getContentText();
+        const result = JSON.parse(responseText);
+
+        console.log(`Mencoba Key... Model: ${model} | Status: ${response.getResponseCode()}`);
+
+        if (response.getResponseCode() === 200 && result.candidates && result.candidates[0]) {
+          const imagePart = result.candidates[0].content.parts.find(p => p.inlineData);
+          if (imagePart) {
+            return createResponse({ 
+              success: true, 
+              imageData: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data,
+              modelUsed: model
+            });
+          }
+        } else if (result.error) {
+          lastError = result.error.message;
+          // Jika error kuota, lanjut ke model/key berikutnya
+          if (lastError.includes('quota') || lastError.includes('limit')) {
+            continue;
+          }
+          return createResponse({ success: false, error: 'Gemini Error: ' + lastError });
+        }
+      } catch (err) {
+        lastError = err.message;
+        continue;
       }
     }
-
-    return createResponse({ success: false, error: 'Model tidak menghasilkan gambar. Cek Log Google Script.' });
-  } catch (err) {
-    return createResponse({ success: false, error: 'Proxy Error: ' + err.message });
   }
+
+  return createResponse({ 
+    success: false, 
+    error: 'Semua API Key & Model telah mencapai batas kuota. Silakan coba lagi nanti atau gunakan API Key baru. Pesan terakhir: ' + lastError 
+  });
 }
 
 function createResponse(data) {
@@ -105,14 +137,11 @@ function createResponse(data) {
 function registerUser(ss, data) {
   const sheet = ss.getSheetByName('Users');
   const users = sheet.getDataRange().getValues();
-  
-  // Check if user exists (force string comparison)
   for (let i = 1; i < users.length; i++) {
     if (String(users[i][1]).toLowerCase() === String(data.nama).toLowerCase()) {
       return createResponse({ success: false, error: 'User sudah terdaftar' });
     }
   }
-  
   const id = Utilities.getUuid();
   sheet.appendRow([id, data.nama, String(data.password)]);
   return createResponse({ success: true, userId: id });
@@ -121,14 +150,11 @@ function registerUser(ss, data) {
 function loginUser(ss, data) {
   const sheet = ss.getSheetByName('Users');
   const users = sheet.getDataRange().getValues();
-  
   for (let i = 1; i < users.length; i++) {
-    // Force string comparison to handle numeric passwords like 8000
     const sheetNama = String(users[i][1]).trim();
     const sheetPass = String(users[i][2]).trim();
     const inputNama = String(data.nama).trim();
     const inputPass = String(data.password).trim();
-    
     if (sheetNama === inputNama && sheetPass === inputPass) {
       return createResponse({ success: true, userId: users[i][0], userName: users[i][1] });
     }
@@ -139,18 +165,13 @@ function loginUser(ss, data) {
 function saveImage(ss, data) {
   const sheet = ss.getSheetByName('Simpan');
   const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-  
-  // Save to Drive
   const blob = Utilities.newBlob(Utilities.base64Decode(data.photoBase64.split(',')[1]), 'image/png', `gen_${Date.now()}.png`);
   const file = folder.createFile(blob);
   const driveUrl = file.getUrl();
-  
-  // Save to Sheet
   const id = data.userId;
   const seq = sheet.getLastRow();
   const timestamp = new Date().toISOString();
   sheet.appendRow([id, seq, timestamp, data.promptteks, driveUrl]);
-  
   return createResponse({ success: true, driveUrl: driveUrl });
 }
 
@@ -158,7 +179,6 @@ function getHistory(ss, userId) {
   const sheet = ss.getSheetByName('Simpan');
   const data = sheet.getDataRange().getValues();
   const history = [];
-  
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === userId) {
       history.push({
@@ -176,7 +196,6 @@ function getHistory(ss, userId) {
 function deleteImage(ss, seq, userId) {
   const sheet = ss.getSheetByName('Simpan');
   const data = sheet.getDataRange().getValues();
-  
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === userId && data[i][1] == seq) {
       sheet.deleteRow(i + 1);
@@ -184,4 +203,17 @@ function deleteImage(ss, seq, userId) {
     }
   }
   return createResponse({ success: false, error: 'Image not found' });
+}
+
+// FUNGSI UNTUK MEMANCING IZIN (PENTING!)
+function testPermissions() {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  console.log("API Key found: " + (apiKey ? "Yes" : "No"));
+  try {
+    // Memanggil URL luar untuk memicu jendela izin
+    const res = UrlFetchApp.fetch("https://www.google.com");
+    console.log("Fetch Test Success: " + res.getResponseCode());
+  } catch(e) {
+    console.log("Fetch Test Failed: " + e.message);
+  }
 }
