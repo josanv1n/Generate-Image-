@@ -7,31 +7,42 @@ const HF_TOKEN = import.meta.env.VITE_HF_TOKEN;
 
 export const generateImageFrontend = async (prompt: string): Promise<{ success: boolean; imageData?: string; error?: string; modelUsed?: string }> => {
   console.log("Memulai generate image di frontend...");
+  console.log("HF Token status:", HF_TOKEN ? "Ditemukan" : "TIDAK Ditemukan (Cek Vercel Env)");
 
-  // --- OPSI 1: POLLINATIONS (Utama - Tanpa Key) ---
+  const cleanPrompt = prompt.replace(/[^a-zA-Z0-9 ]/g, " ");
+  const seed = Math.floor(Math.random() * 1000000);
+
+  // --- OPSI 1: POLLINATIONS (Utama) ---
   try {
     console.log("Mencoba Pollinations...");
-    const cleanPrompt = prompt.replace(/[^a-zA-Z0-9 ]/g, "");
-    const enhancedPrompt = encodeURIComponent(cleanPrompt + ", techno graphic, neon cyberpunk style, high quality, 4k");
-    const seed = Math.floor(Math.random() * 1000000);
+    const enhancedPrompt = encodeURIComponent(cleanPrompt + ", high quality, 4k, masterpiece");
     const pollUrl = `https://image.pollinations.ai/prompt/${enhancedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
 
-    const response = await fetch(pollUrl);
+    const response = await fetch(pollUrl, { mode: 'cors' });
     if (response.ok) {
       const blob = await response.blob();
       const base64Data = await blobToBase64(blob);
-      return {
-        success: true,
-        imageData: base64Data,
-        modelUsed: "Pollinations (Flux)"
-      };
+      return { success: true, imageData: base64Data, modelUsed: "Pollinations (Flux)" };
     }
-    console.warn("Pollinations gagal, mencoba Hugging Face...");
   } catch (err) {
-    console.error("Pollinations Error:", err);
+    console.warn("Pollinations gagal:", err);
   }
 
-  // --- OPSI 2: HUGGING FACE (Cadangan) ---
+  // --- OPSI 2: MAGIC STUDIO (Cadangan Sangat Stabil) ---
+  try {
+    console.log("Mencoba Magic Studio...");
+    const magicUrl = `https://api.magicstudio.com/v1/ai-art-generator?prompt=${encodeURIComponent(cleanPrompt)}&seed=${seed}`;
+    const response = await fetch(magicUrl);
+    if (response.ok) {
+      const blob = await response.blob();
+      const base64Data = await blobToBase64(blob);
+      return { success: true, imageData: base64Data, modelUsed: "Magic Studio" };
+    }
+  } catch (err) {
+    console.warn("Magic Studio gagal:", err);
+  }
+
+  // --- OPSI 3: HUGGING FACE (Cadangan Terakhir) ---
   if (HF_TOKEN) {
     try {
       console.log("Mencoba Hugging Face...");
@@ -50,14 +61,8 @@ export const generateImageFrontend = async (prompt: string): Promise<{ success: 
       if (response.ok) {
         const blob = await response.blob();
         const base64Data = await blobToBase64(blob);
-        return {
-          success: true,
-          imageData: base64Data,
-          modelUsed: "HuggingFace (Flux Schnell)"
-        };
+        return { success: true, imageData: base64Data, modelUsed: "HuggingFace (Flux)" };
       }
-      const errorText = await response.text();
-      console.error("Hugging Face Error:", errorText);
     } catch (err) {
       console.error("Hugging Face Error:", err);
     }
@@ -65,7 +70,7 @@ export const generateImageFrontend = async (prompt: string): Promise<{ success: 
 
   return {
     success: false,
-    error: "Semua metode generate di frontend gagal. Silakan coba lagi nanti."
+    error: `Gagal generate. ${!HF_TOKEN ? "Token HF tidak ditemukan di Env Vercel." : "Semua server sedang sibuk."}`
   };
 };
 
