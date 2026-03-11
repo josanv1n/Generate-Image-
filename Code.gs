@@ -1,0 +1,124 @@
+/**
+ * Google Apps Script (Code.gs)
+ * 
+ * Instructions:
+ * 1. Open your Google Sheet "Tools DB".
+ * 2. Go to Extensions > Apps Script.
+ * 3. Replace the content of Code.gs with this code.
+ * 4. Set Script Properties: GEMINI_API_KEY (if needed for backend logic, though generation is frontend).
+ * 5. Deploy as Web App:
+ *    - Execute as: Me
+ *    - Who has access: Anyone
+ * 6. Copy the Web App URL and set it as VITE_GAS_URL in your environment.
+ */
+
+const SPREADSHEET_ID = '1L6VQeRGqEybVIe5NjPR8nvV-XnqQO6QoarFQeq8B0uQ';
+const DRIVE_FOLDER_ID = '1bAY4Ruum9yIbl0FMUzycmkQJhXzTqtzT';
+
+function doPost(e) {
+  const params = JSON.parse(e.postData.contents);
+  const action = params.action;
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  try {
+    switch (action) {
+      case 'register':
+        return registerUser(ss, params.data);
+      case 'login':
+        return loginUser(ss, params.data);
+      case 'saveImage':
+        return saveImage(ss, params.data);
+      case 'getHistory':
+        return getHistory(ss, params.userId);
+      case 'deleteImage':
+        return deleteImage(ss, params.id, params.userId);
+      default:
+        return createResponse({ success: false, error: 'Invalid action' });
+    }
+  } catch (err) {
+    return createResponse({ success: false, error: err.toString() });
+  }
+}
+
+function createResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function registerUser(ss, data) {
+  const sheet = ss.getSheetByName('Users');
+  const users = sheet.getDataRange().getValues();
+  
+  // Check if user exists
+  for (let i = 1; i < users.length; i++) {
+    if (users[i][1] === data.nama) {
+      return createResponse({ success: false, error: 'User already exists' });
+    }
+  }
+  
+  const id = Utilities.getUuid();
+  sheet.appendRow([id, data.nama, data.password]);
+  return createResponse({ success: true, userId: id });
+}
+
+function loginUser(ss, data) {
+  const sheet = ss.getSheetByName('Users');
+  const users = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < users.length; i++) {
+    if (users[i][1] === data.nama && users[i][2] === data.password) {
+      return createResponse({ success: true, userId: users[i][0], userName: users[i][1] });
+    }
+  }
+  return createResponse({ success: false, error: 'Invalid name or password' });
+}
+
+function saveImage(ss, data) {
+  const sheet = ss.getSheetByName('Simpan');
+  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  
+  // Save to Drive
+  const blob = Utilities.newBlob(Utilities.base64Decode(data.photoBase64.split(',')[1]), 'image/png', `gen_${Date.now()}.png`);
+  const file = folder.createFile(blob);
+  const driveUrl = file.getUrl();
+  
+  // Save to Sheet
+  const id = data.userId;
+  const seq = sheet.getLastRow();
+  const timestamp = new Date().toISOString();
+  sheet.appendRow([id, seq, timestamp, data.promptteks, driveUrl]);
+  
+  return createResponse({ success: true, driveUrl: driveUrl });
+}
+
+function getHistory(ss, userId) {
+  const sheet = ss.getSheetByName('Simpan');
+  const data = sheet.getDataRange().getValues();
+  const history = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      history.push({
+        id: data[i][0],
+        seq: data[i][1],
+        timestamp: data[i][2],
+        prompt: data[i][3],
+        url: data[i][4]
+      });
+    }
+  }
+  return createResponse({ success: true, history: history });
+}
+
+function deleteImage(ss, seq, userId) {
+  const sheet = ss.getSheetByName('Simpan');
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId && data[i][1] == seq) {
+      sheet.deleteRow(i + 1);
+      return createResponse({ success: true });
+    }
+  }
+  return createResponse({ success: false, error: 'Image not found' });
+}

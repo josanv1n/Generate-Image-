@@ -1,0 +1,7 @@
+{
+  "name": "Nano Banana Image Generator",
+  "description": "Hyper-realistic techno-graphic image generator using Gemini 2.5 Flash with Google Sheets and Drive integration.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
