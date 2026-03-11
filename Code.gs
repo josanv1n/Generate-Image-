@@ -27,8 +27,6 @@ function doPost(e) {
         return getHistory(ss, params.userId);
       case 'deleteImage':
         return deleteImage(ss, params.id, params.userId);
-      case 'generateImage':
-        return proxyGenerateImage(params.prompt, params.referenceImages);
       default:
         return createResponse({ success: false, error: 'Invalid action: ' + action });
     }
@@ -36,97 +34,6 @@ function doPost(e) {
     console.error('Error in doPost:', err);
     return createResponse({ success: false, error: 'Server Error: ' + err.message });
   }
-}
-
-function proxyGenerateImage(prompt, referenceImages) {
-  const props = PropertiesService.getScriptProperties();
-  // Mengambil dua API Key (Utama & Cadangan)
-  const apiKeys = [
-    props.getProperty('GEMINI_API_KEY'),
-    props.getProperty('GEMINI_API_KEY_2') // Tambahkan ini di Script Properties jika ada
-  ].filter(k => k); // Hanya gunakan yang tidak kosong
-
-  if (apiKeys.length === 0) {
-    return createResponse({ success: false, error: 'API Key tidak ditemukan di Script Properties' });
-  }
-
-  const models = [
-    'gemini-3.1-flash-image-preview',
-    'gemini-3-pro-image-preview',
-    'gemini-2.5-flash-image'
-  ];
-
-  let lastError = '';
-
-  // Loop melalui setiap API Key
-  for (const apiKey of apiKeys) {
-    // Loop melalui setiap Model
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        
-        const parts = referenceImages.map(base64 => {
-          const mimeType = base64.match(/data:(.*?);base64/)?.[1] || "image/png";
-          return {
-            inlineData: {
-              data: base64.split(',')[1],
-              mimeType: mimeType
-            }
-          };
-        });
-        parts.push({ text: prompt });
-
-        const payload = {
-          contents: [{ parts: parts }],
-          generationConfig: {
-            imageConfig: {
-              aspectRatio: "1:1",
-              imageSize: "1K"
-            }
-          }
-        };
-
-        const options = {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify(payload),
-          muteHttpExceptions: true
-        };
-
-        const response = UrlFetchApp.fetch(url, options);
-        const responseText = response.getContentText();
-        const result = JSON.parse(responseText);
-
-        console.log(`Mencoba Key... Model: ${model} | Status: ${response.getResponseCode()}`);
-
-        if (response.getResponseCode() === 200 && result.candidates && result.candidates[0]) {
-          const imagePart = result.candidates[0].content.parts.find(p => p.inlineData);
-          if (imagePart) {
-            return createResponse({ 
-              success: true, 
-              imageData: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data,
-              modelUsed: model
-            });
-          }
-        } else if (result.error) {
-          lastError = result.error.message;
-          // Jika error kuota, lanjut ke model/key berikutnya
-          if (lastError.includes('quota') || lastError.includes('limit')) {
-            continue;
-          }
-          return createResponse({ success: false, error: 'Gemini Error: ' + lastError });
-        }
-      } catch (err) {
-        lastError = err.message;
-        continue;
-      }
-    }
-  }
-
-  return createResponse({ 
-    success: false, 
-    error: 'Semua API Key & Model telah mencapai batas kuota. Silakan coba lagi nanti atau gunakan API Key baru. Pesan terakhir: ' + lastError 
-  });
 }
 
 function createResponse(data) {
