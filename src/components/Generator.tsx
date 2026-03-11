@@ -3,6 +3,7 @@ import { Camera, Upload, Image as ImageIcon, Sparkles, Trash2, LogOut, History, 
 import { motion, AnimatePresence } from 'motion/react';
 import { geminiService } from '../services/geminiService';
 import { gasService } from '../services/gasService';
+import { generateImageFrontend } from '../services/imageService';
 import { GeneratedImage } from '../types';
 
 interface GeneratorProps {
@@ -77,8 +78,15 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
     setIsGenerating(true);
     setGeneratedImage(null); // Clear previous image
     try {
-      const result = await geminiService.generateImage(prompt, images);
-      setGeneratedImage(result);
+      // Menggunakan service frontend baru (Pollinations & Hugging Face)
+      const result = await generateImageFrontend(prompt);
+      
+      if (result.success && result.imageData) {
+        setGeneratedImage(result.imageData);
+        console.log("Model yang digunakan:", result.modelUsed);
+      } else {
+        throw new Error(result.error || "Gagal menghasilkan gambar.");
+      }
     } catch (err: any) {
       console.error(err);
       alert(err.message || "Gagal menghasilkan gambar. Silakan coba lagi.");
