@@ -125,6 +125,16 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
     }
   };
 
+  const getDirectUrl = (url: string) => {
+    if (!url) return '';
+    // Handle Google Drive links
+    if (url.includes('drive.google.com')) {
+      const id = url.split('/d/')[1]?.split('/')[0] || url.split('id=')[1]?.split('&')[0];
+      if (id) return `https://lh3.googleusercontent.com/d/${id}`;
+    }
+    return url;
+  };
+
   const deleteItem = async (seq: number) => {
     if (!confirm("Delete this item?")) return;
     try {
@@ -307,7 +317,7 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
                 history.map((item) => (
                   <div key={item.seq} className="techno-card p-3 space-y-3">
                     <div className="aspect-video rounded-lg overflow-hidden">
-                      <img src={item.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img src={getDirectUrl(item.url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
                     <div className="flex justify-between items-start">
                       <div className="space-y-1">
