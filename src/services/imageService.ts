@@ -2,21 +2,61 @@
  * Service untuk generate image langsung dari frontend
  */
 
-// Ambil token dari environment variable (VITE_HF_TOKEN)
-const HF_TOKEN = import.meta.env.VITE_HF_TOKEN;
+import { GoogleGenAI } from "@google/genai";
+
+/**
+ * Service untuk generate image menggunakan Gemini API (Utama) 
+ * dan Pollinations (Fallback)
+ */
 
 export const generateImageFrontend = async (prompt: string): Promise<{ success: boolean; imageData?: string; error?: string; modelUsed?: string }> => {
   console.log("--- Memulai Proses Generate ---");
   console.log("Prompt:", prompt);
-  console.log("HF Token status:", HF_TOKEN ? "Ditemukan" : "TIDAK Ditemukan (Cek Vercel Env)");
 
-  const cleanPrompt = prompt.replace(/[^a-zA-Z0-9 ]/g, " ");
-  const seed = Math.floor(Math.random() * 1000000);
-
-  // --- OPSI 1: POLLINATIONS (Sangat Andal) ---
+  // --- OPSI 1: GEMINI API (Metode Paling Stabil) ---
   try {
-    console.log("1. Mencoba Pollinations...");
-    const enhancedPrompt = encodeURIComponent(cleanPrompt + ", high quality, 4k, masterpiece, cinematic lighting");
+    console.log("1. Mencoba Gemini API...");
+    
+    // Inisialisasi Gemini
+    const apiKey = (import.meta.env.VITE_GEMINI_API_KEY) || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '');
+    
+    if (apiKey) {
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [{ text: prompt }],
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "1:1"
+          }
+        }
+      });
+
+      // Cari part yang berisi data gambar
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          const base64Data = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+          console.log("✅ Berhasil: Gemini API");
+          return { success: true, imageData: base64Data, modelUsed: "Gemini 2.5 Flash" };
+        }
+      }
+      console.warn("Gemini tidak mengembalikan gambar, mencoba fallback...");
+    } else {
+      console.warn("API Key Gemini tidak ditemukan, mencoba fallback...");
+    }
+  } catch (err: any) {
+    console.error("Gemini Error:", err.message);
+  }
+
+  // --- OPSI 2: POLLINATIONS (Fallback Sangat Andal) ---
+  try {
+    console.log("2. Mencoba Pollinations...");
+    const cleanPrompt = prompt.replace(/[^a-zA-Z0-9 ]/g, " ");
+    const seed = Math.floor(Math.random() * 1000000);
+    const enhancedPrompt = encodeURIComponent(cleanPrompt + ", high quality, 4k, masterpiece");
     const pollUrl = `https://image.pollinations.ai/prompt/${enhancedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
 
     const response = await fetch(pollUrl);
@@ -33,79 +73,9 @@ export const generateImageFrontend = async (prompt: string): Promise<{ success: 
     console.warn("Pollinations Error:", err.message);
   }
 
-  // --- OPSI 2: MAGIC STUDIO ---
-  try {
-    console.log("2. Mencoba Magic Studio...");
-    const magicUrl = `https://api.magicstudio.com/v1/ai-art-generator?prompt=${encodeURIComponent(cleanPrompt)}&seed=${seed}`;
-    const response = await fetch(magicUrl);
-    if (response.ok) {
-      const blob = await response.blob();
-      if (blob.type.startsWith('image/')) {
-        const base64Data = await blobToBase64(blob);
-        console.log("✅ Berhasil: Magic Studio");
-        return { success: true, imageData: base64Data, modelUsed: "Magic Studio" };
-      }
-    }
-    console.warn(`Magic Studio Gagal (Status: ${response.status})`);
-  } catch (err: any) {
-    console.warn("Magic Studio Error:", err.message);
-  }
-
-  // --- OPSI 3: HUGGING FACE (FLUX) ---
-  if (HF_TOKEN) {
-    try {
-      console.log("3. Mencoba Hugging Face (Flux)...");
-      const hfUrl = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell";
-      
-      const response = await fetch(hfUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${HF_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: prompt }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const base64Data = await blobToBase64(blob);
-        console.log("✅ Berhasil: Hugging Face (Flux)");
-        return { success: true, imageData: base64Data, modelUsed: "HuggingFace (Flux)" };
-      }
-      console.warn(`HF Flux Gagal (Status: ${response.status})`);
-    } catch (err: any) {
-      console.error("HF Flux Error:", err.message);
-    }
-
-    // --- OPSI 4: HUGGING FACE (SDXL - Fallback HF) ---
-    try {
-      console.log("4. Mencoba Hugging Face (SDXL)...");
-      const hfUrl = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
-      
-      const response = await fetch(hfUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${HF_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: prompt }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const base64Data = await blobToBase64(blob);
-        console.log("✅ Berhasil: Hugging Face (SDXL)");
-        return { success: true, imageData: base64Data, modelUsed: "HuggingFace (SDXL)" };
-      }
-      console.warn(`HF SDXL Gagal (Status: ${response.status})`);
-    } catch (err: any) {
-      console.error("HF SDXL Error:", err.message);
-    }
-  }
-
   return {
     success: false,
-    error: `Gagal generate. ${!HF_TOKEN ? "Token HF tidak ditemukan." : "Semua server (Pollinations, MagicStudio, HF) sedang sibuk. Coba prompt lain atau tunggu sebentar."}`
+    error: "Gagal generate gambar. Semua server (Gemini & Pollinations) sedang sibuk. Silakan coba prompt lain atau tunggu sebentar."
   };
 };
 
