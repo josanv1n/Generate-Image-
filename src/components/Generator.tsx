@@ -20,6 +20,7 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
   const [isSaving, setIsSaving] = useState(false);
   const [history, setHistory] = useState<GeneratedImage[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedHistoryImage, setSelectedHistoryImage] = useState<GeneratedImage | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -78,8 +79,9 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
     setIsGenerating(true);
     setGeneratedImage(null); // Clear previous image
     try {
-      // Menggunakan service frontend baru (Pollinations & Hugging Face)
-      const result = await generateImageFrontend(prompt);
+      // Menggunakan service frontend baru (Gemini 3.1 & 2.5)
+      // Mengirim prompt dan gambar referensi (jika ada)
+      const result = await generateImageFrontend(prompt, images);
       
       if (result.success && result.imageData) {
         setGeneratedImage(result.imageData);
@@ -310,27 +312,91 @@ export default function Generator({ userId, userName, onLogout }: GeneratorProps
               <h2 className="font-display text-lg text-[#00ff9d]">ARCHIVE</h2>
               <button onClick={() => setShowHistory(false)} className="p-2 techno-card"><X size={20} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+            <div className="flex-1 overflow-y-auto pr-2">
               {history.length === 0 ? (
                 <p className="text-center text-white/30 font-mono text-sm mt-20">No records found.</p>
               ) : (
-                history.map((item) => (
-                  <div key={item.seq} className="techno-card p-3 space-y-3">
-                    <div className="aspect-video rounded-lg overflow-hidden">
-                      <img src={getDirectUrl(item.url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    </div>
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <p className="text-xs text-white/80 line-clamp-2">{item.prompt}</p>
-                        <p className="text-[10px] font-mono text-white/30">{new Date(item.timestamp).toLocaleString()}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {history.map((item) => (
+                    <div 
+                      key={item.seq} 
+                      onClick={() => setSelectedHistoryImage(item)}
+                      className="techno-card aspect-square overflow-hidden relative cursor-pointer group"
+                    >
+                      <img src={getDirectUrl(item.url)} className="w-full h-full object-cover transition-transform group-hover:scale-110" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Sparkles size={12} className="text-[#00ff9d]" />
                       </div>
-                      <button onClick={() => deleteItem(item.seq)} className="text-red-400 p-1 hover:bg-red-400/10 rounded">
-                        <Trash2 size={16} />
-                      </button>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Full Screen History Image Viewer */}
+      <AnimatePresence>
+        {selectedHistoryImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-2xl p-4 flex flex-col items-center justify-center"
+          >
+            <div className="w-full max-w-lg space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-mono text-[#00ff9d] uppercase tracking-widest">Archive Details</p>
+                  <p className="text-[10px] text-white/40">{new Date(selectedHistoryImage.timestamp).toLocaleString()}</p>
+                </div>
+                <button 
+                  onClick={() => setSelectedHistoryImage(null)}
+                  className="p-2 techno-card hover:bg-white/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="techno-card aspect-square overflow-hidden relative">
+                <img 
+                  src={getDirectUrl(selectedHistoryImage.url)} 
+                  className="w-full h-full object-contain" 
+                  referrerPolicy="no-referrer" 
+                />
+              </div>
+
+              <div className="techno-card p-4 space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono text-white/30 uppercase tracking-tighter">Prompt</label>
+                  <p className="text-sm text-white/90 leading-relaxed">{selectedHistoryImage.prompt}</p>
+                </div>
+                
+                <div className="flex gap-2 pt-2 border-t border-white/5">
+                  <button 
+                    onClick={() => {
+                      setPrompt(selectedHistoryImage.prompt);
+                      setSelectedHistoryImage(null);
+                      setShowHistory(false);
+                    }}
+                    className="flex-1 py-2 bg-[#00ff9d]/10 text-[#00ff9d] rounded-lg font-mono text-[10px] hover:bg-[#00ff9d]/20 transition-colors"
+                  >
+                    USE PROMPT
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if(confirm("Delete this record?")) {
+                        deleteItem(selectedHistoryImage.seq);
+                        setSelectedHistoryImage(null);
+                      }
+                    }}
+                    className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
