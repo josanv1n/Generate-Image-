@@ -36,12 +36,64 @@ function doPost(e) {
         return getHistory(ss, params.userId);
       case 'deleteImage':
         return deleteImage(ss, params.id, params.userId);
+      case 'generateImage':
+        return proxyGenerateImage(params.prompt, params.referenceImages);
       default:
         return createResponse({ success: false, error: 'Invalid action: ' + action });
     }
   } catch (err) {
     console.error('Error in doPost:', err);
     return createResponse({ success: false, error: 'Server Error: ' + err.message });
+  }
+}
+
+function proxyGenerateImage(prompt, referenceImages) {
+  try {
+    const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!apiKey) {
+      return createResponse({ success: false, error: 'API Key tidak ditemukan di Script Properties' });
+    }
+
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=' + apiKey;
+    
+    const parts = referenceImages.map(base64 => {
+      const mimeType = base64.match(/data:(.*?);base64/)?.[1] || "image/png";
+      return {
+        inlineData: {
+          data: base64.split(',')[1],
+          mimeType: mimeType
+        }
+      };
+    });
+    parts.push({ text: prompt });
+
+    const payload = {
+      contents: [{ parts: parts }]
+    };
+
+    const options = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const result = JSON.parse(response.getContentText());
+
+    if (result.candidates && result.candidates[0] && result.candidates[0].content && result.candidates[0].content.parts) {
+      const imagePart = result.candidates[0].content.parts.find(p => p.inlineData);
+      if (imagePart) {
+        return createResponse({ 
+          success: true, 
+          imageData: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data 
+        });
+      }
+    }
+
+    return createResponse({ success: false, error: 'Model tidak menghasilkan gambar. Cek Log Google Script.' });
+  } catch (err) {
+    return createResponse({ success: false, error: 'Proxy Error: ' + err.message });
   }
 }
 
